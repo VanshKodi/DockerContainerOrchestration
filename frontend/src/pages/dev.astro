@@ -143,6 +143,8 @@ const API = "http://localhost:20000";
         const i = containers.indexOf(c);
         document.getElementById(`edit-${c.id}`)?.addEventListener("click", () => showEditContainerModal(c));
         document.getElementById(`del-${c.id}`)?.addEventListener("click", () => deleteContainer(c));
+        document.getElementById(`start-${c.id}`)?.addEventListener("click", () => dockerAction(c.container_id, "start"));
+        document.getElementById(`stop-${c.id}`)?.addEventListener("click", () => dockerAction(c.container_id, "stop"));
         document.getElementById(`ports-toggle-${c.id}`)?.addEventListener("click", () => togglePorts(c.id, i));
         document.getElementById(`add-port-${c.id}`)?.addEventListener("click", () => showAddPortModal(c.id));
       }
@@ -164,6 +166,8 @@ const API = "http://localhost:20000";
           <div class="card-actions">
             <button class="btn btn-ghost" id="edit-${c.id}">Edit</button>
             <button class="btn btn-danger" id="del-${c.id}">Delete</button>
+            <button class="btn btn-ghost" id="start-${c.id}">Start</button>
+            <button class="btn btn-ghost" id="stop-${c.id}">Stop</button>
             <button class="btn btn-ghost" id="ports-toggle-${c.id}">Ports (${(portsMap[c.id] || []).length})</button>
           </div>
           <div class="ports-section" id="ports-section-${c.id}" style="display:none">
@@ -207,6 +211,17 @@ const API = "http://localhost:20000";
       portsMap[containerId] = await api(`/crud/containers/${containerId}/ports`);
       const list = document.getElementById(`ports-list-${containerId}`);
       if (list) list.innerHTML = renderPorts(containerId);
+    }
+
+    async function dockerAction(containerId, action) {
+      try {
+        const res = await api(`/docker/containers/${containerId}/${action}`, { method: "POST" });
+        showToast(res.message);
+        await loadData();
+        render();
+      } catch (err) {
+        showToast(err.message, "error");
+      }
     }
 
     /* --- Container CRUD --- */
