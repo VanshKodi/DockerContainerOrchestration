@@ -51,10 +51,6 @@ def init_db(db_path: Path = DB_PATH) -> None:
                 label          TEXT
             );
         """)
-        try:
-            conn.execute("ALTER TABLE containers ADD COLUMN domain TEXT")
-        except sqlite3.OperationalError:
-            pass
     print("[init_db] Database ready.")
 
 
