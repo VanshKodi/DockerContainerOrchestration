@@ -82,7 +82,7 @@ async def fetch_ports(container_id: str) -> list[dict]:
 
 # ── Wake-up ──────────────────────────────────────────────────────────
 
-async def wake_container(docker_id: str, host: str, listening_port: int) -> bool:
+async def wake_container(docker_id: str, listening_port: int) -> bool:
     log.info("Waking container %s", docker_id)
     try:
         await api_post(f"/docker/containers/{docker_id}/start")
@@ -94,7 +94,7 @@ async def wake_container(docker_id: str, host: str, listening_port: int) -> bool
     while asyncio.get_event_loop().time() < deadline:
         try:
             r, w = await asyncio.wait_for(
-                asyncio.open_connection(host, listening_port),
+                asyncio.open_connection("127.0.0.1", listening_port),
                 timeout=POLL_INTERVAL,
             )
             w.close()
@@ -112,8 +112,8 @@ async def wake_container(docker_id: str, host: str, listening_port: int) -> bool
     return False
 
 
-async def wake_and_cleanup(container_id: str, docker_id: str, host: str, listening_port: int) -> None:
-    ok = await wake_container(docker_id, host, listening_port)
+async def wake_and_cleanup(container_id: str, docker_id: str, listening_port: int) -> None:
+    ok = await wake_container(docker_id, listening_port)
     starting.discard(container_id)
 
 
@@ -153,7 +153,6 @@ async def handle_connection(
     mapping = entry["mapping"]
     container_id = c["id"]
     docker_id = c["container_id"]
-    container_name = c.get("container_name", docker_id)
     listening_port = mapping["listening_port"]
     auto_sleep = c.get("auto_sleep", 0)
 
@@ -162,7 +161,7 @@ async def handle_connection(
     # ── auto_sleep == 0: proxy directly, no start/wait ─────────────
     if auto_sleep == 0:
         try:
-            up_r, up_w = await asyncio.open_connection(container_name, listening_port)
+            up_r, up_w = await asyncio.open_connection("127.0.0.1", listening_port)
         except OSError as e:
             log.error("Cannot connect to upstream port %d for %s: %s", listening_port, docker_id, e)
             client_writer.close()
@@ -187,17 +186,17 @@ async def handle_connection(
 
     if container_id not in starting:
         starting.add(container_id)
-        asyncio.create_task(wake_and_cleanup(container_id, docker_id, container_name, listening_port))
+        asyncio.create_task(wake_and_cleanup(container_id, docker_id, listening_port))
     else:
         log.info("Container %s already being started, waiting...", docker_id)
 
-    if not await poll_port(container_name, listening_port):
+    if not await poll_port(listening_port):
         log.error("Port %d not ready for %s, closing connection", listening_port, docker_id)
         client_writer.close()
         return
 
     try:
-        up_r, up_w = await asyncio.open_connection(container_name, listening_port)
+        up_r, up_w = await asyncio.open_connection("127.0.0.1", listening_port)
     except OSError as e:
         log.error("Cannot connect to upstream after wake for %s: %s", docker_id, e)
         client_writer.close()
@@ -218,12 +217,12 @@ async def handle_connection(
     log.info("Connection closed for %s (host_port %d)", docker_id, host_port)
 
 
-async def poll_port(host: str, port: int) -> bool:
+async def poll_port(port: int) -> bool:
     deadline = asyncio.get_event_loop().time() + POLL_TIMEOUT
     while asyncio.get_event_loop().time() < deadline:
         try:
             r, w = await asyncio.wait_for(
-                asyncio.open_connection(host, port),
+                asyncio.open_connection("127.0.0.1", port),
                 timeout=POLL_INTERVAL,
             )
             w.close()
