@@ -9,12 +9,12 @@ const API = "http://localhost:20000";
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Containers — link.abc.in</title>
+  <title>Containers — dockerRProxy</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐳</text></svg>" />
 </head>
 <body>
   <header>
-    <h1>link.abc.in</h1>
+    <h1>dockerRProxy</h1>
     <nav>
       <a href="/" class="active">Public</a>
       <a href="/dev">Dev</a>
@@ -49,7 +49,7 @@ const API = "http://localhost:20000";
     }
 
     function renderCard(c) {
-      const domain = `${c.container_name}.link.abc.in`;
+      const domain = `${c.container_name}.dockerRProxy`;
       const statusClass = c.status || "running";
       return `
         <a href="http://${domain}" target="_blank" rel="noopener noreferrer" class="card visibility-public" style="text-decoration:none;display:block">
