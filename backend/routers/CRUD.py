@@ -37,7 +37,8 @@ def init_db(db_path: Path = DB_PATH) -> None:
                 sleep_interval_seconds INTEGER NOT NULL DEFAULT 300,
                 status                 TEXT NOT NULL DEFAULT 'running'
                                            CHECK(status IN ('running','stopped','sleeping')),
-                last_accessed_at       TEXT
+                last_accessed_at       TEXT,
+                domain                 TEXT
             );
 
             CREATE TABLE IF NOT EXISTS port_mappings (
@@ -71,6 +72,7 @@ class ContainerCreate(BaseModel):
     auto_sleep: int = 0
     sleep_interval_seconds: int = 300
     status: str = "running"
+    domain: str | None = None
 
 class ContainerUpdate(BaseModel):
     container_name: str | None = None
@@ -80,6 +82,7 @@ class ContainerUpdate(BaseModel):
     sleep_interval_seconds: int | None = None
     status: str | None = None
     last_accessed_at: str | None = None
+    domain: str | None = None
 
 class PortMappingCreate(BaseModel):
     listening_port: int
@@ -123,8 +126,8 @@ async def create_container(body: ContainerCreate):
     cid = str(uuid.uuid4())
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     with get_conn() as conn:
-        conn.execute("""INSERT INTO containers (id, container_id, container_name, description, visibility, auto_sleep, sleep_interval_seconds, status, last_accessed_at) VALUES (?,?,?,?,?,?,?,?,?)""",
-                     (cid, body.container_id, body.container_name, body.description, body.visibility, body.auto_sleep, body.sleep_interval_seconds, body.status, now))
+        conn.execute("""INSERT INTO containers (id, container_id, container_name, description, visibility, auto_sleep, sleep_interval_seconds, status, last_accessed_at, domain) VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                     (cid, body.container_id, body.container_name, body.description, body.visibility, body.auto_sleep, body.sleep_interval_seconds, body.status, now, body.domain))
     return {"id": cid}
 
 

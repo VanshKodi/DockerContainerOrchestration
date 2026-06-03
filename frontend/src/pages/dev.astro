@@ -159,7 +159,7 @@ const API = "http://localhost:20000";
           </div>
           <div class="card-desc">${esc(c.description || "No description")}</div>
           <div style="font-size:.8rem;color:var(--text-muted);margin-bottom:.5rem">
-            ID: ${esc(c.container_id)} · ${c.visibility}
+            ${c.domain ? esc(c.domain) : c.visibility}
           </div>
           <div class="card-actions">
             <button class="btn btn-ghost" id="edit-${c.id}">Edit</button>
@@ -225,6 +225,10 @@ const API = "http://localhost:20000";
               <input id="f-name" placeholder="my-service" />
             </div>
             <div class="form-group">
+              <label>Domain</label>
+              <input id="f-domain" placeholder="my-service.dockerRProxy" />
+            </div>
+            <div class="form-group">
               <label>Description</label>
               <textarea id="f-desc" rows="2" placeholder="What does this do?"></textarea>
             </div>
@@ -259,6 +263,7 @@ const API = "http://localhost:20000";
         const body = {
           container_id: document.getElementById("f-cid").value.trim(),
           container_name: document.getElementById("f-name").value.trim(),
+          domain: document.getElementById("f-domain").value.trim() || null,
           description: document.getElementById("f-desc").value.trim() || null,
           visibility: document.getElementById("f-vis").value,
           status: document.getElementById("f-status").value,
@@ -293,6 +298,10 @@ const API = "http://localhost:20000";
             <div class="form-group">
               <label>Container Name</label>
               <input id="f-name" value="${esc(c.container_name)}" />
+            </div>
+            <div class="form-group">
+              <label>Domain</label>
+              <input id="f-domain" value="${esc(c.domain || c.container_name + '.dockerRProxy')}" />
             </div>
             <div class="form-group">
               <label>Description</label>
@@ -342,6 +351,8 @@ const API = "http://localhost:20000";
         const body = {};
         const name = document.getElementById("f-name").value.trim();
         if (name && name !== c.container_name) body.container_name = name;
+        const domain = document.getElementById("f-domain").value.trim();
+        body.domain = domain || null;
         const desc = document.getElementById("f-desc").value.trim();
         body.description = desc || null;
         body.visibility = document.getElementById("f-vis").value;

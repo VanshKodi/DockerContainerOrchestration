@@ -49,7 +49,7 @@ const API = "http://localhost:20000";
     }
 
     function renderCard(c) {
-      const domain = `${c.container_name}.dockerRProxy`;
+      const domain = c.domain || `${c.container_name}.dockerRProxy`;
       const statusClass = c.status || "running";
       return `
         <a href="http://${domain}" target="_blank" rel="noopener noreferrer" class="card visibility-public" style="text-decoration:none;display:block">
