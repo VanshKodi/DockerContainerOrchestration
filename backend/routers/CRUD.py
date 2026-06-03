@@ -4,10 +4,11 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import APIRouter, FastAPI, HTTPException
+from fastapi import APIRouter, Depends, FastAPI, HTTPException
 from pydantic import BaseModel
+from utils import verify_token
 
-crud_router = APIRouter()
+crud_router = APIRouter(dependencies=[Depends(verify_token)])
 
 DB_DIR = Path(__file__).resolve().parent.parent.parent / ".userdata"
 DB_PATH = DB_DIR / "app.db"
@@ -22,7 +23,7 @@ def get_conn(db_path: Path = DB_PATH) -> sqlite3.Connection:
 
 
 def init_db(db_path: Path = DB_PATH) -> None:
-    db_path.unlink(missing_ok=True)
+    db_path.parent.mkdir(parents=True, exist_ok=True)
     with get_conn(db_path) as conn:
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS containers (

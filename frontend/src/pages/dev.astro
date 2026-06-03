@@ -1,0 +1,519 @@
+---
+import "../styles/global.css";
+
+const API = "http://localhost:20000";
+---
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Dev — Containers</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔧</text></svg>" />
+</head>
+<body>
+  <header>
+    <h1>Containers Dev</h1>
+    <nav>
+      <a href="/">Public</a>
+      <a href="/dev" class="active">Dev</a>
+    </nav>
+  </header>
+
+  <main>
+    <div id="app">
+      <div class="loading">Loading…</div>
+    </div>
+  </main>
+
+  <div id="modal-root"></div>
+  <div id="toast-root"></div>
+
+  <script>
+    const API = "http://localhost:20000";
+
+    let token = localStorage.getItem("dev_token") || "";
+    let containers = [];
+    let portsMap = {};
+
+    async function api(path, opts = {}) {
+      const res = await fetch(`${API}${path}`, {
+        ...opts,
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+          ...opts.headers,
+        },
+      });
+      if (res.status === 401) {
+        localStorage.removeItem("dev_token");
+        token = "";
+        render();
+        throw new Error("Token expired or invalid");
+      }
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(`HTTP ${res.status}${text ? ": " + text : ""}`);
+      }
+      if (res.status === 204) return null;
+      return res.json();
+    }
+
+    async function loadData() {
+      containers = await api("/crud/containers");
+      for (const c of containers) {
+        portsMap[c.id] = await api(`/crud/containers/${c.id}/ports`);
+      }
+    }
+
+    function showToast(msg, type = "success") {
+      const root = document.getElementById("toast-root");
+      const el = document.createElement("div");
+      el.className = `toast ${type}`;
+      el.textContent = msg;
+      root.appendChild(el);
+      setTimeout(() => el.remove(), 3000);
+    }
+
+    function showModal(html) {
+      const root = document.getElementById("modal-root");
+      root.innerHTML = html;
+      const overlay = root.querySelector(".modal-overlay");
+      overlay.addEventListener("click", (e) => {
+        if (e.target === overlay) overlay.remove();
+      });
+      return overlay;
+    }
+
+    function closeModal() {
+      document.getElementById("modal-root").innerHTML = "";
+    }
+
+    async function render() {
+      const app = document.getElementById("app");
+
+      if (!token) {
+        app.innerHTML = `
+          <div class="token-overlay" id="token-overlay">
+            <div class="token-box">
+              <h2>Dev Access</h2>
+              <p>Enter your Bearer token to manage containers.</p>
+              <input type="password" id="token-input" placeholder="Bearer token" autofocus />
+              <div id="token-error" class="error-msg" style="display:none"></div>
+              <button class="btn btn-primary" id="token-submit">Authenticate</button>
+            </div>
+          </div>
+        `;
+        document.getElementById("token-submit").onclick = async () => {
+          const val = document.getElementById("token-input").value.trim();
+          if (!val) return;
+          token = val;
+          localStorage.setItem("dev_token", token);
+          try {
+            await loadData();
+            render();
+          } catch (err) {
+            document.getElementById("token-error").textContent = err.message;
+            document.getElementById("token-error").style.display = "block";
+            token = "";
+            localStorage.removeItem("dev_token");
+          }
+        };
+        document.getElementById("token-input").onkeydown = (e) => {
+          if (e.key === "Enter") document.getElementById("token-submit").click();
+        };
+        return;
+      }
+
+      app.innerHTML = `
+        <div class="add-container-bar">
+          <button class="btn btn-primary" id="add-container-btn">+ Add Container</button>
+        </div>
+        <div class="container-grid" id="container-grid">
+          ${containers.length === 0
+            ? `<div class="empty-state"><h3>No containers</h3><p>Create your first container to get started.</p></div>`
+            : containers.map((c, i) => renderCard(c, i)).join("")}
+        </div>
+      `;
+
+      document.getElementById("add-container-btn").onclick = showAddContainerModal;
+
+      for (const c of containers) {
+        const i = containers.indexOf(c);
+        document.getElementById(`edit-${c.id}`)?.addEventListener("click", () => showEditContainerModal(c));
+        document.getElementById(`del-${c.id}`)?.addEventListener("click", () => deleteContainer(c));
+        document.getElementById(`ports-toggle-${c.id}`)?.addEventListener("click", () => togglePorts(c.id, i));
+        document.getElementById(`add-port-${c.id}`)?.addEventListener("click", () => showAddPortModal(c.id));
+      }
+    }
+
+    function renderCard(c, i) {
+      const statusClass = c.status || "running";
+      const visClass = c.visibility === "public" ? "visibility-public" : "";
+      return `
+        <div class="card ${visClass}" id="card-${c.id}">
+          <div class="card-header">
+            <span class="card-name">${esc(c.container_name)}</span>
+            <span class="status-badge ${statusClass}">${c.status || "running"}</span>
+          </div>
+          <div class="card-desc">${esc(c.description || "No description")}</div>
+          <div style="font-size:.8rem;color:var(--text-muted);margin-bottom:.5rem">
+            ID: ${esc(c.container_id)} · ${c.visibility}
+          </div>
+          <div class="card-actions">
+            <button class="btn btn-ghost" id="edit-${c.id}">Edit</button>
+            <button class="btn btn-danger" id="del-${c.id}">Delete</button>
+            <button class="btn btn-ghost" id="ports-toggle-${c.id}">Ports (${(portsMap[c.id] || []).length})</button>
+          </div>
+          <div class="ports-section" id="ports-section-${c.id}" style="display:none">
+            <div class="ports-title">Port Mappings</div>
+            <div id="ports-list-${c.id}">
+              ${renderPorts(c.id)}
+            </div>
+            <button class="btn btn-ghost add-port-btn" id="add-port-${c.id}">+ Add Port</button>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderPorts(containerId) {
+      const ports = portsMap[containerId] || [];
+      if (ports.length === 0) {
+        return `<div style="color:var(--text-muted);font-size:.82rem">No port mappings</div>`;
+      }
+      return ports.map(p => `
+        <div class="port-row" id="port-row-${p.id}">
+          <div class="port-info">
+            <span>${esc(p.label || "?")}</span>
+            <span class="port-label">${p.listening_port}</span>
+            <span class="port-arrow">→</span>
+            <span>${p.host_port}</span>
+          </div>
+          <div class="port-actions">
+            <button class="btn btn-ghost" onclick="editPort('${p.id}','${containerId}')">Edit</button>
+            <button class="btn btn-danger" onclick="deletePort('${p.id}','${containerId}')">Del</button>
+          </div>
+        </div>
+      `).join("");
+    }
+
+    function togglePorts(containerId) {
+      const section = document.getElementById(`ports-section-${containerId}`);
+      section.style.display = section.style.display === "none" ? "block" : "none";
+    }
+
+    async function refreshPorts(containerId) {
+      portsMap[containerId] = await api(`/crud/containers/${containerId}/ports`);
+      const list = document.getElementById(`ports-list-${containerId}`);
+      if (list) list.innerHTML = renderPorts(containerId);
+    }
+
+    /* --- Container CRUD --- */
+
+    function showAddContainerModal() {
+      const html = `
+        <div class="modal-overlay">
+          <div class="modal">
+            <h3>Add Container</h3>
+            <div class="form-group">
+              <label>Container ID (Docker)</label>
+              <input id="f-cid" placeholder="a1b2c3d4e5f6" />
+            </div>
+            <div class="form-group">
+              <label>Container Name</label>
+              <input id="f-name" placeholder="my-service" />
+            </div>
+            <div class="form-group">
+              <label>Description</label>
+              <textarea id="f-desc" rows="2" placeholder="What does this do?"></textarea>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>Visibility</label>
+                <select id="f-vis">
+                  <option value="public">Public</option>
+                  <option value="private" selected>Private</option>
+                  <option value="internal">Internal</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Status</label>
+                <select id="f-status">
+                  <option value="running" selected>Running</option>
+                  <option value="stopped">Stopped</option>
+                  <option value="sleeping">Sleeping</option>
+                </select>
+              </div>
+            </div>
+            <div id="modal-error" class="error-msg" style="display:none"></div>
+            <div class="modal-footer">
+              <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+              <button class="btn btn-primary" id="modal-submit">Create</button>
+            </div>
+          </div>
+        </div>
+      `;
+      const overlay = showModal(html);
+      document.getElementById("modal-submit").onclick = async () => {
+        const body = {
+          container_id: document.getElementById("f-cid").value.trim(),
+          container_name: document.getElementById("f-name").value.trim(),
+          description: document.getElementById("f-desc").value.trim() || null,
+          visibility: document.getElementById("f-vis").value,
+          status: document.getElementById("f-status").value,
+        };
+        if (!body.container_id || !body.container_name) {
+          document.getElementById("modal-error").textContent = "Container ID and Name are required";
+          document.getElementById("modal-error").style.display = "block";
+          return;
+        }
+        try {
+          await api("/crud/containers", { method: "POST", body: JSON.stringify(body) });
+          closeModal();
+          showToast("Container created");
+          await loadData();
+          render();
+        } catch (err) {
+          document.getElementById("modal-error").textContent = err.message;
+          document.getElementById("modal-error").style.display = "block";
+        }
+      };
+    }
+
+    function showEditContainerModal(c) {
+      const html = `
+        <div class="modal-overlay">
+          <div class="modal">
+            <h3>Edit Container</h3>
+            <div class="form-group">
+              <label>Container ID (Docker)</label>
+              <input id="f-cid" value="${esc(c.container_id)}" disabled style="opacity:.6" />
+            </div>
+            <div class="form-group">
+              <label>Container Name</label>
+              <input id="f-name" value="${esc(c.container_name)}" />
+            </div>
+            <div class="form-group">
+              <label>Description</label>
+              <textarea id="f-desc" rows="2">${esc(c.description || "")}</textarea>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>Visibility</label>
+                <select id="f-vis">
+                  <option value="public" ${c.visibility === "public" ? "selected" : ""}>Public</option>
+                  <option value="private" ${c.visibility === "private" ? "selected" : ""}>Private</option>
+                  <option value="internal" ${c.visibility === "internal" ? "selected" : ""}>Internal</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Status</label>
+                <select id="f-status">
+                  <option value="running" ${c.status === "running" ? "selected" : ""}>Running</option>
+                  <option value="stopped" ${c.status === "stopped" ? "selected" : ""}>Stopped</option>
+                  <option value="sleeping" ${c.status === "sleeping" ? "selected" : ""}>Sleeping</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>Auto Sleep</label>
+                <select id="f-asleep">
+                  <option value="0" ${c.auto_sleep === 0 ? "selected" : ""}>Off</option>
+                  <option value="1" ${c.auto_sleep === 1 ? "selected" : ""}>On</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Sleep Interval (s)</label>
+                <input id="f-sleepint" type="number" value="${c.sleep_interval_seconds}" />
+              </div>
+            </div>
+            <div id="modal-error" class="error-msg" style="display:none"></div>
+            <div class="modal-footer">
+              <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+              <button class="btn btn-primary" id="modal-submit">Save</button>
+            </div>
+          </div>
+        </div>
+      `;
+      showModal(html);
+      document.getElementById("modal-submit").onclick = async () => {
+        const body = {};
+        const name = document.getElementById("f-name").value.trim();
+        if (name && name !== c.container_name) body.container_name = name;
+        const desc = document.getElementById("f-desc").value.trim();
+        body.description = desc || null;
+        body.visibility = document.getElementById("f-vis").value;
+        body.status = document.getElementById("f-status").value;
+        body.auto_sleep = parseInt(document.getElementById("f-asleep").value);
+        body.sleep_interval_seconds = parseInt(document.getElementById("f-sleepint").value) || 300;
+        try {
+          await api(`/crud/containers/${c.id}`, { method: "PUT", body: JSON.stringify(body) });
+          closeModal();
+          showToast("Container updated");
+          await loadData();
+          render();
+        } catch (err) {
+          document.getElementById("modal-error").textContent = err.message;
+          document.getElementById("modal-error").style.display = "block";
+        }
+      };
+    }
+
+    async function deleteContainer(c) {
+      if (!confirm(`Delete container "${c.container_name}"? This also removes all port mappings.`)) return;
+      try {
+        await api(`/crud/containers/${c.id}`, { method: "DELETE" });
+        showToast("Container deleted");
+        await loadData();
+        render();
+      } catch (err) {
+        showToast(err.message, "error");
+      }
+    }
+
+    /* --- Port Mapping CRUD --- */
+
+    function showAddPortModal(containerId) {
+      const html = `
+        <div class="modal-overlay">
+          <div class="modal">
+            <h3>Add Port Mapping</h3>
+            <div class="form-group">
+              <label>Label</label>
+              <input id="f-label" placeholder="web, api, metrics…" />
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>Container Port</label>
+                <input id="f-lport" type="number" placeholder="80" />
+              </div>
+              <div class="form-group">
+                <label>Host Port</label>
+                <input id="f-hport" type="number" placeholder="8080" />
+              </div>
+            </div>
+            <div id="modal-error" class="error-msg" style="display:none"></div>
+            <div class="modal-footer">
+              <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+              <button class="btn btn-primary" id="modal-submit">Add</button>
+            </div>
+          </div>
+        </div>
+      `;
+      showModal(html);
+      document.getElementById("modal-submit").onclick = async () => {
+        const lport = parseInt(document.getElementById("f-lport").value);
+        const hport = parseInt(document.getElementById("f-hport").value);
+        if (isNaN(lport) || isNaN(hport)) {
+          document.getElementById("modal-error").textContent = "Both ports are required";
+          document.getElementById("modal-error").style.display = "block";
+          return;
+        }
+        const body = {
+          listening_port: lport,
+          host_port: hport,
+          label: document.getElementById("f-label").value.trim() || null,
+        };
+        try {
+          await api(`/crud/containers/${containerId}/ports`, { method: "POST", body: JSON.stringify(body) });
+          closeModal();
+          showToast("Port mapping added");
+          await refreshPorts(containerId);
+        } catch (err) {
+          document.getElementById("modal-error").textContent = err.message;
+          document.getElementById("modal-error").style.display = "block";
+        }
+      };
+    }
+
+    window.editPort = async function (portId, containerId) {
+      const ports = portsMap[containerId] || [];
+      const p = ports.find(x => x.id === portId);
+      if (!p) return;
+      const html = `
+        <div class="modal-overlay">
+          <div class="modal">
+            <h3>Edit Port Mapping</h3>
+            <div class="form-group">
+              <label>Label</label>
+              <input id="f-label" value="${esc(p.label || "")}" placeholder="web, api, metrics…" />
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>Container Port</label>
+                <input id="f-lport" type="number" value="${p.listening_port}" />
+              </div>
+              <div class="form-group">
+                <label>Host Port</label>
+                <input id="f-hport" type="number" value="${p.host_port}" />
+              </div>
+            </div>
+            <div id="modal-error" class="error-msg" style="display:none"></div>
+            <div class="modal-footer">
+              <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+              <button class="btn btn-primary" id="modal-submit">Save</button>
+            </div>
+          </div>
+        </div>
+      `;
+      showModal(html);
+      document.getElementById("modal-submit").onclick = async () => {
+        const lport = parseInt(document.getElementById("f-lport").value);
+        const hport = parseInt(document.getElementById("f-hport").value);
+        if (isNaN(lport) || isNaN(hport)) {
+          document.getElementById("modal-error").textContent = "Both ports are required";
+          document.getElementById("modal-error").style.display = "block";
+          return;
+        }
+        const body = {
+          listening_port: lport,
+          host_port: hport,
+          label: document.getElementById("f-label").value.trim() || null,
+        };
+        try {
+          await api(`/crud/ports/${portId}`, { method: "PUT", body: JSON.stringify(body) });
+          closeModal();
+          showToast("Port mapping updated");
+          await refreshPorts(containerId);
+        } catch (err) {
+          document.getElementById("modal-error").textContent = err.message;
+          document.getElementById("modal-error").style.display = "block";
+        }
+      };
+    };
+
+    window.deletePort = async function (portId, containerId) {
+      if (!confirm("Delete this port mapping?")) return;
+      try {
+        await api(`/crud/ports/${portId}`, { method: "DELETE" });
+        showToast("Port mapping deleted");
+        await refreshPorts(containerId);
+      } catch (err) {
+        showToast(err.message, "error");
+      }
+    };
+
+    function esc(s) {
+      const d = document.createElement("div");
+      d.textContent = s;
+      return d.innerHTML;
+    }
+
+    async function init() {
+      if (token) {
+        try {
+          await loadData();
+        } catch {
+          token = "";
+          localStorage.removeItem("dev_token");
+        }
+      }
+      render();
+    }
+
+    init();
+  </script>
+</body>
+</html>

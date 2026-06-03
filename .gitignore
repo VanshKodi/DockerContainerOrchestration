@@ -46,3 +46,6 @@ frontend/pnpm-lock.yaml
 *~
 .DS_Store
 Thumbs.db
+
+# User data
+.userdata/

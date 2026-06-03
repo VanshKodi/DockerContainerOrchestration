@@ -1,0 +1,75 @@
+---
+import "../styles/global.css";
+
+const API = "http://localhost:20000";
+---
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Containers — link.abc.in</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐳</text></svg>" />
+</head>
+<body>
+  <header>
+    <h1>link.abc.in</h1>
+    <nav>
+      <a href="/" class="active">Public</a>
+      <a href="/dev">Dev</a>
+    </nav>
+  </header>
+
+  <main>
+    <div id="app">
+      <div class="loading">Loading containers…</div>
+    </div>
+  </main>
+
+  <script>
+    const API = "http://localhost:20000";
+
+    async function load() {
+      const app = document.getElementById("app");
+      try {
+        const res = await fetch(`${API}/public/containers`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const containers = await res.json();
+
+        if (containers.length === 0) {
+          app.innerHTML = `<div class="empty-state"><h3>No public containers</h3><p>There are no publicly visible containers right now.</p></div>`;
+          return;
+        }
+
+        app.innerHTML = `<div class="container-grid">${containers.map(c => renderCard(c)).join("")}</div>`;
+      } catch (err) {
+        app.innerHTML = `<div class="empty-state"><h3>Failed to load</h3><p>${err.message}</p></div>`;
+      }
+    }
+
+    function renderCard(c) {
+      const domain = `${c.container_name}.link.abc.in`;
+      const statusClass = c.status || "running";
+      return `
+        <a href="http://${domain}" target="_blank" rel="noopener noreferrer" class="card visibility-public" style="text-decoration:none;display:block">
+          <div class="card-header">
+            <span class="card-name">${escapeHtml(c.container_name)}</span>
+            <span class="status-badge ${statusClass}">${statusClass}</span>
+          </div>
+          <div class="card-desc">${escapeHtml(c.description || "No description")}</div>
+          <div class="card-domain">${domain}</div>
+        </a>
+      `;
+    }
+
+    function escapeHtml(s) {
+      const d = document.createElement("div");
+      d.textContent = s;
+      return d.innerHTML;
+    }
+
+    load();
+  </script>
+</body>
+</html>
