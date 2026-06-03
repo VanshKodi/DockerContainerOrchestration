@@ -49,7 +49,3 @@ Thumbs.db
 
 # User data
 .userdata/
-
-# Proxy
-proxy/.venv/
-proxy/uv.lock
