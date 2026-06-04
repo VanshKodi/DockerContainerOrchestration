@@ -176,10 +176,10 @@ async def stop_tracker() -> None:
 
 # ── Public API ─────────────────────────────────────────────────────────
 
-async def ensure_awake(mapping: Mapping) -> None:
+async def ensure_awake(mapping: Mapping, *, force: bool = False) -> None:
     """Guarantee the container behind `mapping` is running and reachable."""
     # Fast path: already running — no probe, no lock, just go.
-    if mapping.status == "running":
+    if not force and mapping.status == "running":
         return
 
     lock = await _lock_for(mapping.db_id)
@@ -188,7 +188,7 @@ async def ensure_awake(mapping: Mapping) -> None:
         current = await registry.get_mapping(mapping.host_port)
         status = current.status if current else mapping.status
 
-        if status != "running":
+        if force or status != "running":
             print(f"[waker] waking {mapping.container_name} ({status})")
             await _start_container(mapping.docker_container_id)
             await touch_last_accessed(mapping.db_id)

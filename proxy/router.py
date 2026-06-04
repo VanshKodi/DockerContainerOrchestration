@@ -78,17 +78,47 @@ def make_app(host_port: int) -> Starlette:
         )
         headers.append((b"x-forwarded-proto", request.url.scheme.encode("latin-1")))
 
-        upstream_req = client.build_request(
-            method=request.method,
-            url=upstream_url,
-            headers=headers,
-            content=request.stream(),
-        )
-
+        # Buffer body so we can retry on connection error.
         try:
-            upstream_resp = await client.send(upstream_req, stream=True)
-        except httpx.HTTPError as e:
-            return PlainTextResponse(f"upstream error: {e}", status_code=502)
+            body = await request.body()
+        except Exception:
+            body = b""
+
+        async def _forward(content: bytes = body) -> httpx.Response | None:
+            try:
+                req = client.build_request(
+                    method=request.method,
+                    url=upstream_url,
+                    headers=headers,
+                    content=content,
+                )
+                return await client.send(req, stream=True)
+            except httpx.HTTPError:
+                return None
+
+        upstream_resp = await _forward()
+        if upstream_resp is None:
+            # Connection failed — container may have crashed or was
+            # manually stopped. Refresh registry and attempt recovery.
+            registry.invalidate()
+            retry_mapping = await registry.get_mapping(host_port)
+            if retry_mapping:
+                try:
+                    await ensure_awake(retry_mapping, force=True)
+                    upstream_resp = await _forward()
+                except WakeError:
+                    pass
+                if upstream_resp is not None:
+                    await touch_last_accessed(retry_mapping.db_id)
+                    return StreamingResponse(
+                        upstream_resp.aiter_raw(),
+                        status_code=upstream_resp.status_code,
+                        headers=dict(
+                            (k.decode("latin-1"), v.decode("latin-1"))
+                            for k, v in _filter_response_headers(upstream_resp)
+                        ),
+                    )
+            return PlainTextResponse("upstream error: connection refused", status_code=502)
 
         # Bump access timestamp (in-memory, batch-flushed to backend).
         await touch_last_accessed(mapping.db_id)
@@ -117,16 +147,36 @@ def make_app(host_port: int) -> Starlette:
 
         subprotocols = ws.scope.get("subprotocols") or None
 
+        _ws_upstream = None
         try:
-            upstream = await websockets.connect(
+            _ws_upstream = await websockets.connect(
                 upstream_uri,
                 subprotocols=subprotocols,
                 open_timeout=config.PROBE_TIMEOUT,
                 max_size=None,
             )
         except Exception as e:
-            await ws.close(code=1011, reason=f"upstream ws failed: {e}"[:120])
-            return
+            # Connection failed — container may have crashed. Recovery
+            # attempt similar to HTTP handler.
+            registry.invalidate()
+            retry_mapping = await registry.get_mapping(host_port)
+            if retry_mapping:
+                try:
+                    await ensure_awake(retry_mapping, force=True)
+                    _ws_upstream = await websockets.connect(
+                        upstream_uri,
+                        subprotocols=subprotocols,
+                        open_timeout=config.PROBE_TIMEOUT,
+                        max_size=None,
+                    )
+                except Exception:
+                    pass
+            if _ws_upstream is None:
+                await ws.close(code=1011, reason=f"upstream ws failed: {e}"[:120])
+                return
+            mapping = retry_mapping
+
+        upstream = _ws_upstream
 
         await ws.accept(
             subprotocol=upstream.subprotocol if upstream.subprotocol else None
