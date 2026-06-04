@@ -1,9 +1,12 @@
 [project]
 name = "proxy"
 version = "0.1.0"
-description = "Add your description here"
+description = "Wake-on-demand reverse proxy for DockerRProxy"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
-    "requests>=2.34.2",
+    "starlette>=0.41.0",
+    "uvicorn>=0.34.0",
+    "httpx>=0.28.0",
+    "websockets>=14.0",
 ]
