@@ -147,9 +147,22 @@ async def _reap_once() -> None:
                 print(f"[reaper] failed to sleep {name}: {e}")
 
 
+async def _wait_for_backend() -> None:
+    """Retry reconcile_servers until the backend is reachable."""
+    delay = 1.0
+    while True:
+        try:
+            await reconcile_servers()
+            return
+        except httpx.HTTPError as e:
+            print(f"[main] backend not ready ({e}); retrying in {delay:.0f}s")
+            await asyncio.sleep(delay)
+            delay = min(delay * 2, 16.0)
+
+
 async def run() -> None:
     # Wait for the backend to be reachable, then do the initial spin-up.
-    await reconcile_servers()
+    await _wait_for_backend()
 
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
@@ -182,6 +195,10 @@ def main() -> None:
         asyncio.run(run())
     except KeyboardInterrupt:
         pass
+    except Exception:
+        import traceback
+        traceback.print_exc()
+        input("\nPress Enter to exit...")
 
 
 if __name__ == "__main__":
