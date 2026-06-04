@@ -1,0 +1,9 @@
+start.sh text eol=lf
+Dockerfile text eol=lf
+*.py text eol=crlf
+*.bat text eol=crlf
+*.astro text eol=crlf
+*.css text eol=crlf
+*.json text eol=crlf
+*.toml text eol=crlf
+*.yml text eol=crlf

@@ -1,7 +1,10 @@
 """Static configuration for the proxy.
 
 Values are hardcoded to match the existing backend/proxy setup.
+Key settings can be overridden via environment variables for Docker.
 """
+
+import os
 
 # Backend API base URL (note trailing slash).
 BACKEND_URL = "http://127.0.0.1:20000/"
@@ -13,7 +16,9 @@ AUTH_TOKEN = "changeme"
 HEADERS = {"Authorization": f"Bearer {AUTH_TOKEN}"}
 
 # Host where containers publish their listening_port.
-UPSTREAM_HOST = "127.0.0.1"
+# Override with UPSTREAM_HOST env var for Docker usage
+# (e.g. "host.docker.internal" or Docker gateway IP).
+UPSTREAM_HOST = os.environ.get("UPSTREAM_HOST", "127.0.0.1")
 
 # Registry cache time-to-live, in seconds. Avoids hammering the backend
 # under burst traffic while keeping data reasonably fresh.
