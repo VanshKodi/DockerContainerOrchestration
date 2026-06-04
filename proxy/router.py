@@ -14,7 +14,6 @@ import contextlib
 import httpx
 import websockets
 from starlette.applications import Starlette
-from starlette.background import BackgroundTask
 from starlette.requests import Request
 from starlette.responses import PlainTextResponse, StreamingResponse
 from starlette.routing import Route, WebSocketRoute
@@ -91,10 +90,8 @@ def make_app(host_port: int) -> Starlette:
         except httpx.HTTPError as e:
             return PlainTextResponse(f"upstream error: {e}", status_code=502)
 
-        # Fire-and-forget access bump after the response is delivered.
-        async def _after() -> None:
-            await upstream_resp.aclose()
-            await touch_last_accessed(mapping.db_id)
+        # Bump access timestamp (in-memory, batch-flushed to backend).
+        await touch_last_accessed(mapping.db_id)
 
         return StreamingResponse(
             upstream_resp.aiter_raw(),
@@ -103,7 +100,6 @@ def make_app(host_port: int) -> Starlette:
                 (k.decode("latin-1"), v.decode("latin-1"))
                 for k, v in _filter_response_headers(upstream_resp)
             ),
-            background=BackgroundTask(_after),
         )
 
     async def ws_handler(ws: WebSocket) -> None:

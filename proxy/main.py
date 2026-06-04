@@ -23,6 +23,7 @@ import uvicorn
 import config
 from registry import registry
 from router import make_app
+from waker import close_client, get_client, start_tracker, stop_tracker
 
 
 class ServerHandle:
@@ -109,8 +110,8 @@ async def reaper(stop: asyncio.Event) -> None:
 
 async def _reap_once() -> None:
     now = datetime.now()
-    async with httpx.AsyncClient(timeout=config.BACKEND_TIMEOUT) as client:
-        resp = await client.get(
+    try:
+        resp = await get_client().get(
             f"{config.BACKEND_URL}crud/containers", headers=config.HEADERS
         )
         resp.raise_for_status()
@@ -131,13 +132,12 @@ async def _reap_once() -> None:
             name = c.get("container_name")
             print(f"[reaper] sleeping {name} (idle {idle:.0f}s)")
             try:
-                stop_resp = await client.post(
+                stop_resp = await get_client().post(
                     f"{config.BACKEND_URL}docker/containers/{docker_id}/stop",
                     headers=config.HEADERS,
                 )
                 stop_resp.raise_for_status()
-                # backend writes 'stopped'; override to 'sleeping' per schema.
-                await client.put(
+                await get_client().put(
                     f"{config.BACKEND_URL}crud/containers/{db_id}",
                     headers=config.HEADERS,
                     json={"status": "sleeping"},
@@ -145,6 +145,8 @@ async def _reap_once() -> None:
                 registry.invalidate()
             except httpx.HTTPError as e:
                 print(f"[reaper] failed to sleep {name}: {e}")
+    except httpx.HTTPError as e:
+        raise  # let caller handle
 
 
 async def _wait_for_backend() -> None:
@@ -163,6 +165,8 @@ async def _wait_for_backend() -> None:
 async def run() -> None:
     # Wait for the backend to be reachable, then do the initial spin-up.
     await _wait_for_backend()
+
+    start_tracker()
 
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
@@ -187,6 +191,8 @@ async def run() -> None:
             await task
 
     await asyncio.gather(*(h.stop() for h in list(servers.values())))
+    await stop_tracker()
+    await close_client()
     print("[main] all servers stopped")
 
 

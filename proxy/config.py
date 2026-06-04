@@ -17,13 +17,15 @@ UPSTREAM_HOST = "127.0.0.1"
 
 # Registry cache time-to-live, in seconds. Avoids hammering the backend
 # under burst traffic while keeping data reasonably fresh.
-CACHE_TTL = 5.0
+CACHE_TTL = 30.0
 
 # Readiness probe (TCP connect to localhost:listening_port).
 PROBE_TIMEOUT = 30.0        # max total seconds to wait for a container
 PROBE_BACKOFF_START = 0.25  # initial retry delay
 PROBE_BACKOFF_MAX = 2.0     # cap on retry delay
-PROBE_CONNECT_TIMEOUT = 1.0  # per-attempt TCP connect timeout
+
+# How often the access tracker batch-flushes last_accessed_at updates.
+ACCESS_FLUSH_INTERVAL = 5.0
 
 # Backend HTTP call timeout (seconds).
 BACKEND_TIMEOUT = 10.0
